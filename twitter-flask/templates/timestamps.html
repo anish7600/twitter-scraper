@@ -1,0 +1,7 @@
+<h2>User: {{ username }}</h2>
+<h3>Select a Timestamp</h3>
+<ul>
+  {% for ts in timestamps %}
+  <li><a href="{{ url_for('view_tweets', username=username, timestamp=ts) }}">{{ ts }}</a></li>
+  {% endfor %}
+</ul>

@@ -1,0 +1,14 @@
+<h1>{{ username }} - {{ timestamp }}</h1>
+<a href="/users/{{ username }}">⬅ Back</a>
+
+{% for tweet in tweets %}
+<div class="tweet-card">
+  <p><strong>{{ tweet.main_text }}</strong></p>
+  {% for quote in tweet.quoted_texts %}
+    <blockquote>{{ quote }}</blockquote>
+  {% endfor %}
+  {% for img in tweet.images %}
+    <img src="{{ img }}" width="400">
+  {% endfor %}
+</div>
+{% endfor %}

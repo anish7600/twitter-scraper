@@ -1,11 +1,11 @@
 from playwright.sync_api import sync_playwright
+from datetime import datetime
 from bs4 import BeautifulSoup
 import browser_cookie3
-import time
+import os
 import csv
 
-USERNAME = ""
-TARGET_TWEET_COUNT = 100
+TARGET_TWEET_COUNT = 5
 
 def get_chrome_cookies(domain=".x.com"):
     cj = browser_cookie3.chrome(domain_name=domain)
@@ -22,6 +22,7 @@ def get_chrome_cookies(domain=".x.com"):
             "sameSite": "Lax"
         })
     return cookies
+
 
 def extract_tweets_with_images(html):
     soup = BeautifulSoup(html, "html.parser")
@@ -57,6 +58,7 @@ def extract_tweets_with_images(html):
         tweets_data.append(tweet_data)
 
     return tweets_data
+
 
 def scrape_authenticated_tweets(username, target_count):
     with sync_playwright() as p:
@@ -101,7 +103,9 @@ def scrape_authenticated_tweets(username, target_count):
         browser.close()
         return all_tweets
 
-def save_tweets_to_csv(tweets, filename="tweets.csv"):
+
+def save_tweets_to_csv(path, tweets, filename="tweets.csv"):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(filename, mode="a", newline='', encoding="utf-8") as file:
         writer = csv.DictWriter(file, fieldnames=["main_text", "quoted_texts", "images"])
         writer.writeheader()
@@ -111,6 +115,7 @@ def save_tweets_to_csv(tweets, filename="tweets.csv"):
                 "quoted_texts": " || ".join(tweet.get("quoted_texts", [])),
                 "images": " || ".join(tweet.get("images", []))
             })
+
 
 def display_tweets_from_csv(filename="tweets.csv"):
     with open(filename, mode="r", encoding="utf-8") as file:
@@ -130,16 +135,28 @@ def display_tweets_from_csv(filename="tweets.csv"):
                     print(f"\n📸 {img}")
 
 
+def read_usernames(filename="twitter_handles.txt"):
+    with open(filename, "r") as f:
+        return [line.strip() for line in f if line.strip()]
+
+
 if __name__ == "__main__":
-    tweets = scrape_authenticated_tweets(USERNAME, TARGET_TWEET_COUNT)
-    for i, tweet in enumerate(tweets, 1):
-        print(f"\n{i}. 📝 Tweet #{i}")
-        print(f"Main: {tweet['main_text']}")
+    usernames = read_usernames()
+    for username in usernames:
+        print(f"🔍 Scraping tweets for: {username}")
+        tweets = scrape_authenticated_tweets(username, target_count=TARGET_TWEET_COUNT)
 
-        for j, quoted in enumerate(tweet.get("quoted_texts", []), 1):
-            print(f"\n🔁 Quoted/Repost #{j}: {quoted}")
+        # for i, tweet in enumerate(tweets, 1):
+        #     print(f"\n{i}. 📝 Tweet #{i}")
+        #     print(f"Main: {tweet['main_text']}")
 
-        for img in tweet["images"]:
-            print(f"\n📸 {img}")
+        #     for j, quoted in enumerate(tweet.get("quoted_texts", []), 1):
+        #         print(f"\n🔁 Quoted/Repost #{j}: {quoted}")
 
-    save_tweets_to_csv(tweets)
+        #     for img in tweet["images"]:
+        #         print(f"\n📸 {img}")        
+
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        save_path = os.path.join("users", username, timestamp, "tweets.csv")
+        save_tweets_to_csv(save_path, tweets, save_path)
+        print(f"✅ Saved to {save_path}")
