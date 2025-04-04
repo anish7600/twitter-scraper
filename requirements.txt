@@ -1,0 +1,8 @@
+playwright
+beautifulsoup4
+browser-cookie3
+requests
+pillow
+flask
+pandas
+
