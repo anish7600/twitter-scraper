@@ -4,6 +4,7 @@ import browser_cookie3
 import os
 import csv
 import re
+import sys
 from datetime import datetime
 from concurrent.futures import ProcessPoolExecutor, as_completed
 import multiprocessing
@@ -35,8 +36,10 @@ def extract_tweets_with_videos(html, intercepted_videos):
     tweets_data = []
 
     for article in soup.find_all("article"):
+        main_text = ''
+
         tweet_text_blocks = [div.get_text(separator=" ", strip=True)
-                             for div in article.find_all("div", {"data-testid": "tweetText"})]
+                            for div in article.find_all("div", {"data-testid": "tweetText"})]
         if not tweet_text_blocks:
             continue
 
@@ -46,15 +49,27 @@ def extract_tweets_with_videos(html, intercepted_videos):
         poster = ''
         repost_title = ''
 
-        social_context = soup.find('span', {'data-testid': 'socialContext'})
+        user_name_divs = article.find_all('div', {'data-testid': 'User-Name'})
+
+        # Step 1: Check for repost (retweet)
+        social_context = article.find('span', {'data-testid': 'socialContext'})
         if social_context:
-            inner_span = social_context.find('span')
-            poster = inner_span.find('span').text if inner_span and inner_span.find('span') else None
-            user_names = article.find_all('div', {'data-testid': 'User-Name'})
-            repost_title = user_names[0].text if user_names else ""
+            # This indicates a retweet
+            poster_span = social_context.find('span')
+            if poster_span:
+                poster = poster_span.get_text(strip=True)
+            
+            repost_title = user_name_divs[0].get_text(strip=True)
+            handle_index = repost_title.find('@')
+            repost_title = repost_title[:handle_index]
         else:
-            user_names = article.find_all('div', {'data-testid': 'User-Name'})
-            poster = user_names[0].text if user_names else ""
+            # Poster is usually the first 'User-Name'
+            poster = user_name_divs[0].get_text(strip=True)
+            handle_index = poster.find('@')
+            poster = poster[:handle_index]
+            repost_title = user_name_divs[1].get_text(strip=True) if len(user_name_divs) > 1 else ''
+            handle_index = repost_title.find('@')
+            repost_title = repost_title[:handle_index]
 
         image_links = []
         video_links = []
@@ -154,7 +169,7 @@ def save_tweets_to_csv(path, tweets):
                 "videos": " || ".join(tweet.get("videos", []))
             })
 
-def read_usernames(filename="twitter_handles.txt"):
+def read_usernames(filename):
     """Read Twitter usernames from a file."""
     with open(filename, "r") as f:
         return [line.strip() for line in f if line.strip()]
@@ -177,7 +192,10 @@ def scrape_user(username):
 if __name__ == "__main__":
     multiprocessing.set_start_method("spawn")  # Safe on macOS
 
-    usernames = read_usernames()
+    # Use command-line argument if provided
+    filename = sys.argv[1] if len(sys.argv) > 1 else "twitter_handles.txt"
+    usernames = read_usernames(filename)
+
     max_workers = min(4, len(usernames))  # Adjust based on CPU and rate limits
 
     with ProcessPoolExecutor(max_workers=max_workers) as executor:

@@ -7,7 +7,7 @@
 
 ### Fetch Tweets
 
-- python fetch_and_save_tweets.py
+- python scrape_and_save_tweets.py
 
 ### Tweets Dashboard
 

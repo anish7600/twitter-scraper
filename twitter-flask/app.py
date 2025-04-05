@@ -8,22 +8,30 @@ BASE_DIR = os.getcwd()
 USERS_PATH = os.path.join(BASE_DIR, "users")
 
 def get_all_users():
+    if not os.path.exists(USERS_PATH):
+        return []
     return [user for user in os.listdir(USERS_PATH) if os.path.isdir(os.path.join(USERS_PATH, user))]
 
 def get_timestamps_for_user(user):
     return [ts for ts in os.listdir(os.path.join(USERS_PATH, user)) if os.path.isdir(os.path.join(USERS_PATH, user, ts))]
+
+def clean_field(val):
+    val = str(val).strip()
+    if val.lower() == "nan" or not val:
+        return None
+    return val
 
 def load_tweets_from_csv(path):
     df = pd.read_csv(path)
     tweets = []
     for _, row in df.iterrows():
         tweets.append({
-            'main_text': row['main_text'],
-            'quoted_texts': row['quoted_texts'].split(" || ") if pd.notna(row['quoted_texts']) else [],
-            'images': row['images'].split(" || ") if pd.notna(row['images']) else [],
-            'videos': row['videos'].split(" || ") if pd.notna(row['videos']) else [],
-            'poster': row['poster'],
-            'repost_title': row['repost_title']
+            'main_text': clean_field(row['main_text']),
+            'quoted_texts': [clean_field(q) for q in str(row['quoted_texts']).split(" || ") if clean_field(q)] if pd.notna(row['quoted_texts']) else [],
+            'images': [clean_field(img) for img in str(row['images']).split(" || ") if clean_field(img)] if pd.notna(row['images']) else [],
+            'videos': [clean_field(vid) for vid in str(row['videos']).split(" || ") if clean_field(vid)] if pd.notna(row['videos']) else [],
+            'poster': clean_field(row['poster']),
+            'repost_title': clean_field(row['repost_title']),
         })
     return tweets
 

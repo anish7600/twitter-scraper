@@ -40,26 +40,29 @@
     <a href="{{ url_for('user_timestamps', username=username) }}" class="btn btn-secondary mb-4">⬅ Back</a>
 
     {% for tweet in tweets %}
-    <div class="tweet-card">
-      <p><strong>{{ tweet.poster }}</strong></p>
-      <p>{{ tweet.main_text }}</p>
+      <div class="tweet-card">
+        <p><strong>{{ tweet.poster }}</strong></p>
 
-      {% if tweet.repost_title %}
-        <p class="text-muted"><em>🔁 {{ tweet.repost_title }}</em></p>
-      {% endif %}
+        {% if tweet.main_text %}
+          <p>{{ tweet.main_text }}</p>
+        {% endif %}
 
-      {% for quote in tweet.quoted_texts %}
-        <blockquote class="blockquote">{{ quote }}</blockquote>
-      {% endfor %}
+        {% if tweet.repost_title %}
+          <p class="text-muted"><em>🔁 {{ tweet.repost_title }}</em></p>
+        {% endif %}
 
-      {% for img in tweet.images %}
-        <img src="{{ img }}" class="img-fluid d-block mb-2" />
-      {% endfor %}
+        {% for quote in tweet.quoted_texts %}
+          <blockquote class="blockquote">{{ quote }}</blockquote>
+        {% endfor %}
 
-      {% for video in tweet.videos %}
-        <video class="tweet-video" controls data-src="{{ video }}"></video>
-      {% endfor %}
-    </div>
+        {% for img in tweet.images %}
+          <img src="{{ img }}" class="img-fluid d-block mb-2" />
+        {% endfor %}
+
+        {% for video in tweet.videos %}
+          <video class="tweet-video" controls data-src="{{ video }}"></video>
+        {% endfor %}
+      </div>
     {% endfor %}
   </div>
 
