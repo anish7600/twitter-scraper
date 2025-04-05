@@ -29,13 +29,8 @@ def load_tweets_from_csv(path):
 
 @app.route("/")
 def home():
-    return render_template("home.html")
-
-@app.route("/users")
-def users():
     user_list = get_all_users()
-    print(user_list)
-    return render_template("users.html", users=user_list)
+    return render_template("home.html", users=user_list)
 
 @app.route("/users/<username>")
 def user_timestamps(username):

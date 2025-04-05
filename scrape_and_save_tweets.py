@@ -5,9 +5,11 @@ import os
 import csv
 import re
 from datetime import datetime
+from concurrent.futures import ProcessPoolExecutor, as_completed
+import multiprocessing
 
 # Constants
-TARGET_TWEET_COUNT = 20
+TARGET_TWEET_COUNT = 100
 CHROME_EXECUTABLE_PATH = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 
 def get_chrome_cookies(domain=".x.com"):
@@ -27,16 +29,12 @@ def get_chrome_cookies(domain=".x.com"):
         })
     return cookies
 
-import re
-from bs4 import BeautifulSoup
-
 def extract_tweets_with_videos(html, intercepted_videos):
     """Parse the HTML to extract tweets and associate them with their videos."""
     soup = BeautifulSoup(html, "html.parser")
     tweets_data = []
 
     for article in soup.find_all("article"):
-        # Extract tweet text
         tweet_text_blocks = [div.get_text(separator=" ", strip=True)
                              for div in article.find_all("div", {"data-testid": "tweetText"})]
         if not tweet_text_blocks:
@@ -49,19 +47,15 @@ def extract_tweets_with_videos(html, intercepted_videos):
         repost_title = ''
 
         social_context = soup.find('span', {'data-testid': 'socialContext'})
-
         if social_context:
-            # Dig into the nested structure safely
             inner_span = social_context.find('span')
             poster = inner_span.find('span').text if inner_span and inner_span.find('span') else None
-
             user_names = article.find_all('div', {'data-testid': 'User-Name'})
-            repost_title = user_names[0].text
+            repost_title = user_names[0].text if user_names else ""
         else:
             user_names = article.find_all('div', {'data-testid': 'User-Name'})
-            poster = user_names[0].text if user_names else None
+            poster = user_names[0].text if user_names else ""
 
-        # Extract images and videos
         image_links = []
         video_links = []
 
@@ -69,12 +63,9 @@ def extract_tweets_with_videos(html, intercepted_videos):
             src = img.get("src", "")
             if not src:
                 continue
-
-            # Skip profile pics and emojis
             if "profile_images" in src or "emoji" in src:
                 continue
 
-            # Match video thumbnails to intercepted video URLs
             match = re.search(r"ext_tw_video_thumb/(\d+)/", src)
             if match:
                 video_id = match.group(1)
@@ -82,9 +73,8 @@ def extract_tweets_with_videos(html, intercepted_videos):
                     if video_id in video_url:
                         video_links.append(video_url)
                         break
-                continue  # Skip adding thumbnail to images
+                continue
 
-            # All other images
             image_links.append(src)
 
         tweets_data.append({
@@ -98,13 +88,11 @@ def extract_tweets_with_videos(html, intercepted_videos):
 
     return tweets_data
 
-
 def scrape_authenticated_tweets(username, target_count):
     """Scrape tweets from a user's profile, intercepting video streams."""
     intercepted_videos = []
 
     def intercept_videos(route, request):
-        """Intercept video stream requests."""
         if "video.twimg.com" in request.url and ".m3u8" in request.url:
             intercepted_videos.append(request.url)
         route.continue_()
@@ -127,7 +115,6 @@ def scrape_authenticated_tweets(username, target_count):
         scroll_attempts = 0
 
         while len(all_tweets) < target_count:
-            # Scroll to load more tweets
             page.mouse.wheel(0, 2000)
             page.wait_for_timeout(1500)
 
@@ -172,9 +159,9 @@ def read_usernames(filename="twitter_handles.txt"):
     with open(filename, "r") as f:
         return [line.strip() for line in f if line.strip()]
 
-if __name__ == "__main__":
-    usernames = read_usernames()
-    for username in usernames:
+def scrape_user(username):
+    """Wrapper function to scrape and save tweets for a single user."""
+    try:
         print(f"🔍 Scraping tweets for: {username}")
         tweets = scrape_authenticated_tweets(username, target_count=TARGET_TWEET_COUNT)
 
@@ -182,3 +169,20 @@ if __name__ == "__main__":
         save_path = os.path.join("users", username, timestamp, "tweets.csv")
         save_tweets_to_csv(save_path, tweets)
         print(f"✅ Saved to {save_path}")
+        return username
+    except Exception as e:
+        print(f"❌ Error scraping {username}: {e}")
+        return None
+
+if __name__ == "__main__":
+    multiprocessing.set_start_method("spawn")  # Safe on macOS
+
+    usernames = read_usernames()
+    max_workers = min(4, len(usernames))  # Adjust based on CPU and rate limits
+
+    with ProcessPoolExecutor(max_workers=max_workers) as executor:
+        futures = [executor.submit(scrape_user, username) for username in usernames]
+        for future in as_completed(futures):
+            result = future.result()
+            if result:
+                print(f"✅ Finished scraping for: {result}")

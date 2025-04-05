@@ -3,12 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <title>{{ username }} - {{ timestamp }}</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
   <style>
     body {
-      font-family: Arial, sans-serif;
-      padding: 2rem;
-      background-color: #f5f5f5;
+      background-color: #f8f9fa;
     }
     .tweet-card {
       background: white;
@@ -25,57 +24,62 @@
     img {
       margin-top: 1rem;
       border-radius: 8px;
+      width: 400px;
     }
     video {
       margin-top: 1rem;
       border-radius: 8px;
       background-color: black;
+      width: 480px;
     }
   </style>
 </head>
 <body>
+  <div class="container mt-5">
+    <h1>{{ username }} — {{ timestamp }}</h1>
+    <a href="{{ url_for('user_timestamps', username=username) }}" class="btn btn-secondary mb-4">⬅ Back</a>
 
-<h1>{{ username }} - {{ timestamp }}</h1>
-<a href="/users/{{ username }}">⬅ Back</a>
+    {% for tweet in tweets %}
+    <div class="tweet-card">
+      <p><strong>{{ tweet.poster }}</strong></p>
+      <p>{{ tweet.main_text }}</p>
 
-{% for tweet in tweets %}
-<div class="tweet-card">
-<p><strong>{{ tweet.poster }}</strong></p>
-<p><strong>{{ tweet.main_text }}</strong></p>
-  {% if tweet.repost_title %}
-  <p><em>🔁 {{ tweet.repost_title }}</em></p>
-{% endif %}
-  {% for quote in tweet.quoted_texts %}
-    <blockquote>{{ quote }}</blockquote>
-  {% endfor %}
-  {% for img in tweet.images %}
-    <img src="{{ img }}" width="400">
-  {% endfor %}
-  {% for video in tweet.videos %}
-    <video class="tweet-video" width="480" controls data-src="{{ video }}"></video>
-  {% endfor %}
-</div>
-{% endfor %}
+      {% if tweet.repost_title %}
+        <p class="text-muted"><em>🔁 {{ tweet.repost_title }}</em></p>
+      {% endif %}
 
-<script>
-  document.addEventListener('DOMContentLoaded', () => {
-    document.querySelectorAll('video.tweet-video').forEach(video => {
-      const videoSrc = video.getAttribute('data-src');
+      {% for quote in tweet.quoted_texts %}
+        <blockquote class="blockquote">{{ quote }}</blockquote>
+      {% endfor %}
 
-      if (Hls.isSupported()) {
-        const hls = new Hls();
-        hls.loadSource(videoSrc);
-        hls.attachMedia(video);
-      } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-        video.src = videoSrc;
-      } else {
-        const fallback = document.createElement('p');
-        fallback.textContent = "⚠️ Your browser doesn't support this video format.";
-        video.parentNode.replaceChild(fallback, video);
-      }
+      {% for img in tweet.images %}
+        <img src="{{ img }}" class="img-fluid d-block mb-2" />
+      {% endfor %}
+
+      {% for video in tweet.videos %}
+        <video class="tweet-video" controls data-src="{{ video }}"></video>
+      {% endfor %}
+    </div>
+    {% endfor %}
+  </div>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      document.querySelectorAll('video.tweet-video').forEach(video => {
+        const videoSrc = video.getAttribute('data-src');
+        if (Hls.isSupported()) {
+          const hls = new Hls();
+          hls.loadSource(videoSrc);
+          hls.attachMedia(video);
+        } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+          video.src = videoSrc;
+        } else {
+          const fallback = document.createElement('p');
+          fallback.textContent = "⚠️ Your browser doesn't support this video format.";
+          video.parentNode.replaceChild(fallback, video);
+        }
+      });
     });
-  });
-</script>
-
+  </script>
 </body>
 </html>
