@@ -1,3 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>{{ username }} - {{ timestamp }}</title>
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 2rem;
+      background-color: #f5f5f5;
+    }
+    .tweet-card {
+      background: white;
+      border-radius: 12px;
+      padding: 1.5rem;
+      margin-bottom: 2rem;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    }
+    blockquote {
+      margin-left: 1rem;
+      padding-left: 1rem;
+      border-left: 3px solid #ccc;
+    }
+    img {
+      margin-top: 1rem;
+      border-radius: 8px;
+    }
+    video {
+      margin-top: 1rem;
+      border-radius: 8px;
+      background-color: black;
+    }
+  </style>
+</head>
+<body>
+
 <h1>{{ username }} - {{ timestamp }}</h1>
 <a href="/users/{{ username }}">⬅ Back</a>
 
@@ -10,5 +47,31 @@
   {% for img in tweet.images %}
     <img src="{{ img }}" width="400">
   {% endfor %}
+  {% for video in tweet.videos %}
+    <video class="tweet-video" width="480" controls data-src="{{ video }}"></video>
+  {% endfor %}
 </div>
 {% endfor %}
+
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('video.tweet-video').forEach(video => {
+      const videoSrc = video.getAttribute('data-src');
+
+      if (Hls.isSupported()) {
+        const hls = new Hls();
+        hls.loadSource(videoSrc);
+        hls.attachMedia(video);
+      } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+        video.src = videoSrc;
+      } else {
+        const fallback = document.createElement('p');
+        fallback.textContent = "⚠️ Your browser doesn't support this video format.";
+        video.parentNode.replaceChild(fallback, video);
+      }
+    });
+  });
+</script>
+
+</body>
+</html>

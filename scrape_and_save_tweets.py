@@ -1,13 +1,17 @@
 from playwright.sync_api import sync_playwright
-from datetime import datetime
 from bs4 import BeautifulSoup
 import browser_cookie3
 import os
 import csv
+import re
+from datetime import datetime
 
-TARGET_TWEET_COUNT = 5
+# Constants
+TARGET_TWEET_COUNT = 20
+CHROME_EXECUTABLE_PATH = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 
 def get_chrome_cookies(domain=".x.com"):
+    """Retrieve cookies from Chrome for the specified domain."""
     cj = browser_cookie3.chrome(domain_name=domain)
     cookies = []
     for cookie in cj:
@@ -23,52 +27,78 @@ def get_chrome_cookies(domain=".x.com"):
         })
     return cookies
 
+import re
+from bs4 import BeautifulSoup
 
-def extract_tweets_with_images(html):
+def extract_tweets_with_videos(html, intercepted_videos):
+    """Parse the HTML to extract tweets and associate them with their videos."""
     soup = BeautifulSoup(html, "html.parser")
     tweets_data = []
 
     for article in soup.find_all("article"):
-        tweet_text_blocks = []
-
-        for div in article.find_all("div", {"data-testid": "tweetText"}):
-            text = div.get_text(separator=" ", strip=True)
-            if not text:
-                text = " "  # Assume emoji-only
-            tweet_text_blocks.append(text)
-
+        # Extract tweet text
+        tweet_text_blocks = [div.get_text(separator=" ", strip=True)
+                             for div in article.find_all("div", {"data-testid": "tweetText"})]
         if not tweet_text_blocks:
             continue
 
         main_text = tweet_text_blocks[0]
         quoted_texts = tweet_text_blocks[1:] if len(tweet_text_blocks) > 1 else []
 
+        # Extract images and videos
         image_links = []
+        video_links = []
+
         for img in article.find_all("img"):
             src = img.get("src", "")
-            if "profile_images" not in src and "emoji" not in src:
-                image_links.append(src)
+            if not src:
+                continue
 
-        tweet_data = {
+            # Skip profile pics and emojis
+            if "profile_images" in src or "emoji" in src:
+                continue
+
+            # Match video thumbnails to intercepted video URLs
+            match = re.search(r"ext_tw_video_thumb/(\d+)/", src)
+            if match:
+                video_id = match.group(1)
+                for video_url in intercepted_videos:
+                    if video_id in video_url:
+                        video_links.append(video_url)
+                        break
+                continue  # Skip adding thumbnail to images
+
+            # All other images
+            image_links.append(src)
+
+        tweets_data.append({
             "main_text": main_text,
             "quoted_texts": quoted_texts,
-            "images": image_links
-        }
-
-        tweets_data.append(tweet_data)
+            "images": image_links,
+            "videos": video_links
+        })
 
     return tweets_data
 
 
 def scrape_authenticated_tweets(username, target_count):
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=False)
-        context = browser.new_context()
+    """Scrape tweets from a user's profile, intercepting video streams."""
+    intercepted_videos = []
 
-        cookies = get_chrome_cookies()
-        context.add_cookies(cookies)
+    def intercept_videos(route, request):
+        """Intercept video stream requests."""
+        if "video.twimg.com" in request.url and ".m3u8" in request.url:
+            intercepted_videos.append(request.url)
+        route.continue_()
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=False, executable_path=CHROME_EXECUTABLE_PATH)
+        context = browser.new_context()
+        context.add_cookies(get_chrome_cookies())
 
         page = context.new_page()
+        page.route("**/*", intercept_videos)
+
         url = f"https://x.com/{username}"
         print(f"➡️ Opening {url}")
         page.goto(url)
@@ -79,12 +109,12 @@ def scrape_authenticated_tweets(username, target_count):
         scroll_attempts = 0
 
         while len(all_tweets) < target_count:
-            # Scroll a bit before grabbing new content
+            # Scroll to load more tweets
             page.mouse.wheel(0, 2000)
             page.wait_for_timeout(1500)
 
             html = page.content()
-            new_tweets = extract_tweets_with_images(html)
+            new_tweets = extract_tweets_with_videos(html, intercepted_videos)
 
             for tweet in new_tweets:
                 if tweet["main_text"] in seen_texts:
@@ -103,42 +133,24 @@ def scrape_authenticated_tweets(username, target_count):
         browser.close()
         return all_tweets
 
-
-def save_tweets_to_csv(path, tweets, filename="tweets.csv"):
+def save_tweets_to_csv(path, tweets):
+    """Save the extracted tweets to a CSV file."""
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(filename, mode="a", newline='', encoding="utf-8") as file:
-        writer = csv.DictWriter(file, fieldnames=["main_text", "quoted_texts", "images"])
+    with open(path, mode="w", newline='', encoding="utf-8") as file:
+        writer = csv.DictWriter(file, fieldnames=["main_text", "quoted_texts", "images", "videos"])
         writer.writeheader()
         for tweet in tweets:
             writer.writerow({
                 "main_text": tweet["main_text"],
                 "quoted_texts": " || ".join(tweet.get("quoted_texts", [])),
-                "images": " || ".join(tweet.get("images", []))
+                "images": " || ".join(tweet.get("images", [])),
+                "videos": " || ".join(tweet.get("videos", []))
             })
 
-
-def display_tweets_from_csv(filename="tweets.csv"):
-    with open(filename, mode="r", encoding="utf-8") as file:
-        reader = csv.DictReader(file)
-        for i, row in enumerate(reader, 1):
-            print(f"\n{i}. 📝 Tweet #{i}")
-            print(f"Main: {row['main_text']}")
-
-            quoted = row["quoted_text"].strip()
-            if quoted:
-                for j, q in enumerate(quoted.split(" || "), 1):
-                    print(f"\n🔁 Quoted/Repost #{j}: {q}")
-
-            images = row["images"].strip()
-            if images:
-                for img in images.split(" || "):
-                    print(f"\n📸 {img}")
-
-
 def read_usernames(filename="twitter_handles.txt"):
+    """Read Twitter usernames from a file."""
     with open(filename, "r") as f:
         return [line.strip() for line in f if line.strip()]
-
 
 if __name__ == "__main__":
     usernames = read_usernames()
@@ -146,17 +158,7 @@ if __name__ == "__main__":
         print(f"🔍 Scraping tweets for: {username}")
         tweets = scrape_authenticated_tweets(username, target_count=TARGET_TWEET_COUNT)
 
-        # for i, tweet in enumerate(tweets, 1):
-        #     print(f"\n{i}. 📝 Tweet #{i}")
-        #     print(f"Main: {tweet['main_text']}")
-
-        #     for j, quoted in enumerate(tweet.get("quoted_texts", []), 1):
-        #         print(f"\n🔁 Quoted/Repost #{j}: {quoted}")
-
-        #     for img in tweet["images"]:
-        #         print(f"\n📸 {img}")        
-
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         save_path = os.path.join("users", username, timestamp, "tweets.csv")
-        save_tweets_to_csv(save_path, tweets, save_path)
+        save_tweets_to_csv(save_path, tweets)
         print(f"✅ Saved to {save_path}")
