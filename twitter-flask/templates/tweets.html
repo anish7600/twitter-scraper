@@ -40,7 +40,11 @@
 
 {% for tweet in tweets %}
 <div class="tweet-card">
-  <p><strong>{{ tweet.main_text }}</strong></p>
+<p><strong>{{ tweet.poster }}</strong></p>
+<p><strong>{{ tweet.main_text }}</strong></p>
+  {% if tweet.repost_title %}
+  <p><em>🔁 {{ tweet.repost_title }}</em></p>
+{% endif %}
   {% for quote in tweet.quoted_texts %}
     <blockquote>{{ quote }}</blockquote>
   {% endfor %}

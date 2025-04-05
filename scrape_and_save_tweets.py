@@ -45,6 +45,22 @@ def extract_tweets_with_videos(html, intercepted_videos):
         main_text = tweet_text_blocks[0]
         quoted_texts = tweet_text_blocks[1:] if len(tweet_text_blocks) > 1 else []
 
+        poster = ''
+        repost_title = ''
+
+        social_context = soup.find('span', {'data-testid': 'socialContext'})
+
+        if social_context:
+            # Dig into the nested structure safely
+            inner_span = social_context.find('span')
+            poster = inner_span.find('span').text if inner_span and inner_span.find('span') else None
+
+            user_names = article.find_all('div', {'data-testid': 'User-Name'})
+            repost_title = user_names[0].text
+        else:
+            user_names = article.find_all('div', {'data-testid': 'User-Name'})
+            poster = user_names[0].text if user_names else None
+
         # Extract images and videos
         image_links = []
         video_links = []
@@ -75,7 +91,9 @@ def extract_tweets_with_videos(html, intercepted_videos):
             "main_text": main_text,
             "quoted_texts": quoted_texts,
             "images": image_links,
-            "videos": video_links
+            "videos": video_links,
+            "poster": poster,
+            "repost_title": repost_title
         })
 
     return tweets_data
@@ -137,12 +155,14 @@ def save_tweets_to_csv(path, tweets):
     """Save the extracted tweets to a CSV file."""
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, mode="w", newline='', encoding="utf-8") as file:
-        writer = csv.DictWriter(file, fieldnames=["main_text", "quoted_texts", "images", "videos"])
+        writer = csv.DictWriter(file, fieldnames=["main_text", "quoted_texts", "poster", "repost_title", "images", "videos"])
         writer.writeheader()
         for tweet in tweets:
             writer.writerow({
                 "main_text": tweet["main_text"],
                 "quoted_texts": " || ".join(tweet.get("quoted_texts", [])),
+                "poster": tweet["poster"],
+                "repost_title": tweet["repost_title"],
                 "images": " || ".join(tweet.get("images", [])),
                 "videos": " || ".join(tweet.get("videos", []))
             })

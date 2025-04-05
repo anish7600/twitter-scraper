@@ -21,7 +21,9 @@ def load_tweets_from_csv(path):
             'main_text': row['main_text'],
             'quoted_texts': row['quoted_texts'].split(" || ") if pd.notna(row['quoted_texts']) else [],
             'images': row['images'].split(" || ") if pd.notna(row['images']) else [],
-            'videos': row['videos'].split(" || ") if pd.notna(row['videos']) else []
+            'videos': row['videos'].split(" || ") if pd.notna(row['videos']) else [],
+            'poster': row['poster'],
+            'repost_title': row['repost_title']
         })
     return tweets
 
