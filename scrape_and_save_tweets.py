@@ -4,13 +4,14 @@ import browser_cookie3
 import os
 import csv
 import re
-import sys
+import argparse
 from datetime import datetime
 from concurrent.futures import ProcessPoolExecutor, as_completed
 import multiprocessing
 
+
 # Constants
-TARGET_TWEET_COUNT = 100
+TWEET_COUNT = 100
 CHROME_EXECUTABLE_PATH = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 
 def get_chrome_cookies(domain=".x.com"):
@@ -28,6 +29,7 @@ def get_chrome_cookies(domain=".x.com"):
             "secure": bool(cookie.secure),
             "sameSite": "Lax"
         })
+
     return cookies
 
 def extract_tweets_with_videos(html, intercepted_videos):
@@ -36,10 +38,11 @@ def extract_tweets_with_videos(html, intercepted_videos):
     tweets_data = []
 
     for article in soup.find_all("article"):
-        main_text = ''
+
 
         tweet_text_blocks = [div.get_text(separator=" ", strip=True)
                             for div in article.find_all("div", {"data-testid": "tweetText"})]
+
         if not tweet_text_blocks:
             continue
 
@@ -103,7 +106,7 @@ def extract_tweets_with_videos(html, intercepted_videos):
 
     return tweets_data
 
-def scrape_authenticated_tweets(username, target_count):
+def scrape_authenticated_tweets(handle, tweet_count):
     """Scrape tweets from a user's profile, intercepting video streams."""
     intercepted_videos = []
 
@@ -120,7 +123,7 @@ def scrape_authenticated_tweets(username, target_count):
         page = context.new_page()
         page.route("**/*", intercept_videos)
 
-        url = f"https://x.com/{username}"
+        url = f"https://x.com/{handle}"
         print(f"➡️ Opening {url}")
         page.goto(url)
         page.wait_for_timeout(3000)
@@ -129,7 +132,7 @@ def scrape_authenticated_tweets(username, target_count):
         seen_texts = set()
         scroll_attempts = 0
 
-        while len(all_tweets) < target_count:
+        while len(all_tweets) < tweet_count:
             page.mouse.wheel(0, 2000)
             page.wait_for_timeout(1500)
 
@@ -142,7 +145,7 @@ def scrape_authenticated_tweets(username, target_count):
                 all_tweets.append(tweet)
                 seen_texts.add(tweet["main_text"])
                 print(f"✅ Collected tweet #{len(all_tweets)}: {tweet['main_text'][:60]}...")
-                if len(all_tweets) >= target_count:
+                if len(all_tweets) >= tweet_count:
                     break
 
             scroll_attempts += 1
@@ -169,37 +172,44 @@ def save_tweets_to_csv(path, tweets):
                 "videos": " || ".join(tweet.get("videos", []))
             })
 
-def read_usernames(filename):
+def read_handles(filename):
     """Read Twitter usernames from a file."""
     with open(filename, "r") as f:
         return [line.strip() for line in f if line.strip()]
 
-def scrape_user(username):
+def scrape_handle(handle):
     """Wrapper function to scrape and save tweets for a single user."""
     try:
-        print(f"🔍 Scraping tweets for: {username}")
-        tweets = scrape_authenticated_tweets(username, target_count=TARGET_TWEET_COUNT)
+        print(f"🔍 Scraping tweets for: {handle}")
+        tweets = scrape_authenticated_tweets(handle, TWEET_COUNT)
 
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        save_path = os.path.join("users", username, timestamp, "tweets.csv")
+        save_path = os.path.join("users", handle, timestamp, "tweets.csv")
         save_tweets_to_csv(save_path, tweets)
         print(f"✅ Saved to {save_path}")
-        return username
+        return handle
     except Exception as e:
-        print(f"❌ Error scraping {username}: {e}")
+        print(f"❌ Error scraping {handle}: {e}")
         return None
 
 if __name__ == "__main__":
-    multiprocessing.set_start_method("spawn")  # Safe on macOS
+    parser = argparse.ArgumentParser(description="Scrape Twitter handles.")
+    parser.add_argument("filename", nargs="?", default="twitter_handles.txt", help="File containing Twitter handles")
+    parser.add_argument("--handle", help="Scrape a single Twitter handle instead of a file")
 
-    # Use command-line argument if provided
-    filename = sys.argv[1] if len(sys.argv) > 1 else "twitter_handles.txt"
-    usernames = read_usernames(filename)
+    args = parser.parse_args()
 
-    max_workers = min(4, len(usernames))  # Adjust based on CPU and rate limits
+    if args.handle:
+        twitter_handles = [args.handle]
+    else:
+        twitter_handles = read_handles(args.filename)
+
+    multiprocessing.set_start_method("spawn")
+
+    max_workers = min(4, len(twitter_handles))
 
     with ProcessPoolExecutor(max_workers=max_workers) as executor:
-        futures = [executor.submit(scrape_user, username) for username in usernames]
+        futures = [executor.submit(scrape_handle, handle) for handle in twitter_handles]
         for future in as_completed(futures):
             result = future.result()
             if result:
