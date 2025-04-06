@@ -10,7 +10,7 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 import multiprocessing
 
 # Constants
-TWEET_COUNT = 30
+TWEET_COUNT = 100
 CHROME_EXECUTABLE_PATH = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 
 def get_chrome_cookies(domain=".x.com"):
@@ -32,13 +32,13 @@ def get_chrome_cookies(domain=".x.com"):
 import re
 from bs4 import BeautifulSoup
 
-
-def parse_tweets(html):
+def parse_tweets(html, handle):
     soup = BeautifulSoup(html, "html.parser")
     tweets_data = []
 
     for article in soup.find_all("article"):
         tweet = {}
+        tweet_items = {}
 
         # Extract tweet texts
         tweet_text_divs = article.find_all("div", {"data-testid": "tweetText"})
@@ -50,8 +50,22 @@ def parse_tweets(html):
         if not tweet_text_blocks:
             continue
 
-        tweet["main_text"] = tweet_text_blocks[0]
-        tweet["quoted_texts"] = tweet_text_blocks[1:] if len(tweet_text_blocks) > 1 else []
+        username_blocks = [
+            div.get_text(separator=" ", strip=True)
+            for div in article.find_all("div", {"data-testid": "User-Name"})
+        ]
+
+        for idx, tweet_text in enumerate(tweet_text_blocks):
+            tweet_items[username_blocks[idx]] = tweet_text
+
+        tweet['main_text'] = ''
+        tweet['quoted_texts'] = []
+
+        for username, tweet_text in tweet_items.items():
+            if handle in username:
+                tweet["main_text"] = tweet_text
+            else:
+                tweet["quoted_texts"].append(tweet_text)
 
         # Extract poster and repost title
         tweet["poster"], tweet["repost_title"] = extract_user_info(article)
@@ -133,8 +147,8 @@ def resolve_videos(tweets_data, intercepted_videos):
     return final_tweets
 
 
-def extract_tweets_with_videos(html, intercepted_videos):
-    tweets_with_articles = parse_tweets(html)
+def extract_tweets_with_videos(html, handle, intercepted_videos):
+    tweets_with_articles = parse_tweets(html, handle)
     tweets_resolved = resolve_videos(tweets_with_articles, intercepted_videos)
     return tweets_resolved
 
@@ -169,7 +183,7 @@ def scrape_authenticated_tweets(handle, tweet_count):
             page.wait_for_timeout(1500)
 
             html = page.content()
-            new_tweets = extract_tweets_with_videos(html, intercepted_videos)
+            new_tweets = extract_tweets_with_videos(html, handle, intercepted_videos)
 
             for tweet in new_tweets:
                 if tweet["main_text"] in seen_texts:
