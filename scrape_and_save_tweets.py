@@ -29,8 +29,6 @@ def get_chrome_cookies(domain=".x.com"):
         })
     return cookies
 
-import re
-from bs4 import BeautifulSoup
 
 def parse_tweets(html, handle):
     soup = BeautifulSoup(html, "html.parser")
@@ -39,6 +37,8 @@ def parse_tweets(html, handle):
     for article in soup.find_all("article"):
         tweet = {}
         tweet_items = {}
+        tweet['main_text'] = ''
+        tweet['quoted_texts'] = []
 
         # Extract tweet texts
         tweet_text_divs = article.find_all("div", {"data-testid": "tweetText"})
@@ -55,11 +55,10 @@ def parse_tweets(html, handle):
             for div in article.find_all("div", {"data-testid": "User-Name"})
         ]
 
+        tweet["poster"] = username_blocks[0]
+
         for idx, tweet_text in enumerate(tweet_text_blocks):
             tweet_items[username_blocks[idx]] = tweet_text
-
-        tweet['main_text'] = ''
-        tweet['quoted_texts'] = []
 
         for username, tweet_text in tweet_items.items():
             if handle in username:
@@ -67,8 +66,8 @@ def parse_tweets(html, handle):
             else:
                 tweet["quoted_texts"].append(tweet_text)
 
-        # Extract poster and repost title
-        tweet["poster"], tweet["repost_title"] = extract_user_info(article)
+        # Extract repost title
+        tweet["repost_title"] = extract_user_info(article)
 
         # Extract images and videos (video extraction needs intercepted_videos input)
         tweet["images"], tweet["alt_texts"], tweet["video_ids"] = parse_images(article)
@@ -82,27 +81,14 @@ def extract_user_info(article):
     user_name_divs = article.find_all('div', {'data-testid': 'User-Name'})
     social_context = article.find('span', {'data-testid': 'socialContext'})
 
-    poster = ''
     repost_title = ''
 
-    if social_context:
-        poster_span = social_context.find('span')
-        if poster_span:
-            poster = poster_span.get_text(strip=True)
-
-        if user_name_divs:
-            repost_title = user_name_divs[0].get_text(strip=True)
-            repost_title = repost_title[:repost_title.find('@')]
-    else:
-        if user_name_divs:
-            poster = user_name_divs[0].get_text(strip=True)
-            poster = poster[:poster.find('@')] if '@' in poster else poster
-
+    if not social_context:
         if len(user_name_divs) > 1:
             repost_title = user_name_divs[1].get_text(strip=True)
             repost_title = repost_title[:repost_title.find('@')] if '@' in repost_title else repost_title
 
-    return poster, repost_title
+    return repost_title
 
 
 def parse_images(article):
