@@ -9,13 +9,11 @@ from datetime import datetime
 from concurrent.futures import ProcessPoolExecutor, as_completed
 import multiprocessing
 
-
 # Constants
-TWEET_COUNT = 100
+TWEET_COUNT = 30
 CHROME_EXECUTABLE_PATH = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 
 def get_chrome_cookies(domain=".x.com"):
-    """Retrieve cookies from Chrome for the specified domain."""
     cj = browser_cookie3.chrome(domain_name=domain)
     cookies = []
     for cookie in cj:
@@ -29,85 +27,119 @@ def get_chrome_cookies(domain=".x.com"):
             "secure": bool(cookie.secure),
             "sameSite": "Lax"
         })
-
     return cookies
 
-def extract_tweets_with_videos(html, intercepted_videos):
-    """Parse the HTML to extract tweets and associate them with their videos."""
+import re
+from bs4 import BeautifulSoup
+
+
+def parse_tweets(html):
     soup = BeautifulSoup(html, "html.parser")
     tweets_data = []
 
     for article in soup.find_all("article"):
+        tweet = {}
 
-
-        tweet_text_blocks = [div.get_text(separator=" ", strip=True)
-                            for div in article.find_all("div", {"data-testid": "tweetText"})]
+        # Extract tweet texts
+        tweet_text_divs = article.find_all("div", {"data-testid": "tweetText"})
+        tweet_text_blocks = [
+            "\n".join([span.get_text(" ", strip=True) for span in div.find_all("span")])
+            for div in tweet_text_divs
+        ]
 
         if not tweet_text_blocks:
             continue
 
-        main_text = tweet_text_blocks[0]
-        quoted_texts = tweet_text_blocks[1:] if len(tweet_text_blocks) > 1 else []
+        tweet["main_text"] = tweet_text_blocks[0]
+        tweet["quoted_texts"] = tweet_text_blocks[1:] if len(tweet_text_blocks) > 1 else []
 
-        poster = ''
-        repost_title = ''
+        # Extract poster and repost title
+        tweet["poster"], tweet["repost_title"] = extract_user_info(article)
 
-        user_name_divs = article.find_all('div', {'data-testid': 'User-Name'})
+        # Extract images and videos (video extraction needs intercepted_videos input)
+        tweet["images"], tweet["alt_texts"], tweet["video_ids"] = parse_images(article)
 
-        # Step 1: Check for repost (retweet)
-        social_context = article.find('span', {'data-testid': 'socialContext'})
-        if social_context:
-            # This indicates a retweet
-            poster_span = social_context.find('span')
-            if poster_span:
-                poster = poster_span.get_text(strip=True)
-            
-            repost_title = user_name_divs[0].get_text(strip=True)
-            handle_index = repost_title.find('@')
-            repost_title = repost_title[:handle_index]
-        else:
-            # Poster is usually the first 'User-Name'
-            poster = user_name_divs[0].get_text(strip=True)
-            handle_index = poster.find('@')
-            poster = poster[:handle_index]
-            repost_title = user_name_divs[1].get_text(strip=True) if len(user_name_divs) > 1 else ''
-            handle_index = repost_title.find('@')
-            repost_title = repost_title[:handle_index]
-
-        image_links = []
-        video_links = []
-
-        for img in article.find_all("img"):
-            src = img.get("src", "")
-            if not src:
-                continue
-            if "profile_images" in src or "emoji" in src:
-                continue
-
-            match = re.search(r"ext_tw_video_thumb/(\d+)/", src)
-            if match:
-                video_id = match.group(1)
-                for video_url in intercepted_videos:
-                    if video_id in video_url:
-                        video_links.append(video_url)
-                        break
-                continue
-
-            image_links.append(src)
-
-        tweets_data.append({
-            "main_text": main_text,
-            "quoted_texts": quoted_texts,
-            "images": image_links,
-            "videos": video_links,
-            "poster": poster,
-            "repost_title": repost_title
-        })
+        tweets_data.append((article, tweet))  # Keep article for video resolution
 
     return tweets_data
 
+
+def extract_user_info(article):
+    user_name_divs = article.find_all('div', {'data-testid': 'User-Name'})
+    social_context = article.find('span', {'data-testid': 'socialContext'})
+
+    poster = ''
+    repost_title = ''
+
+    if social_context:
+        poster_span = social_context.find('span')
+        if poster_span:
+            poster = poster_span.get_text(strip=True)
+
+        if user_name_divs:
+            repost_title = user_name_divs[0].get_text(strip=True)
+            repost_title = repost_title[:repost_title.find('@')]
+    else:
+        if user_name_divs:
+            poster = user_name_divs[0].get_text(strip=True)
+            poster = poster[:poster.find('@')] if '@' in poster else poster
+
+        if len(user_name_divs) > 1:
+            repost_title = user_name_divs[1].get_text(strip=True)
+            repost_title = repost_title[:repost_title.find('@')] if '@' in repost_title else repost_title
+
+    return poster, repost_title
+
+
+def parse_images(article):
+    image_links = []
+    alt_texts = []
+    video_ids = []
+
+    for img in article.find_all("img"):
+        src = img.get("src", "")
+        if not src:
+            continue
+        if "profile_images" in src or "emoji" in src:
+            continue
+
+        # Check if it's a video thumbnail
+        match = re.search(r"ext_tw_video_thumb/(\d+)/", src)
+        if match:
+            video_ids.append(match.group(1))
+            continue
+
+        image_links.append(src)
+
+        alt = img.get("alt", "")
+        if alt and alt != "Image":
+            alt_texts.append(alt)
+
+    return image_links, alt_texts, video_ids
+
+
+def resolve_videos(tweets_data, intercepted_videos):
+    final_tweets = []
+    for article, tweet in tweets_data:
+        video_links = []
+        for video_id in tweet.get("video_ids", []):
+            for video_url in intercepted_videos:
+                if video_id in video_url:
+                    video_links.append(video_url)
+                    break
+        tweet["videos"] = video_links
+        tweet.pop("video_ids", None)
+        final_tweets.append(tweet)
+    return final_tweets
+
+
+def extract_tweets_with_videos(html, intercepted_videos):
+    tweets_with_articles = parse_tweets(html)
+    tweets_resolved = resolve_videos(tweets_with_articles, intercepted_videos)
+    return tweets_resolved
+
+
 def scrape_authenticated_tweets(handle, tweet_count):
-    """Scrape tweets from a user's profile, intercepting video streams."""
     intercepted_videos = []
 
     def intercept_videos(route, request):
@@ -118,7 +150,7 @@ def scrape_authenticated_tweets(handle, tweet_count):
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=False, executable_path=CHROME_EXECUTABLE_PATH)
         context = browser.new_context()
-        context.add_cookies(get_chrome_cookies())
+        context.add_cookies(get_chrome_cookies(".x.com"))
 
         page = context.new_page()
         page.route("**/*", intercept_videos)
@@ -157,10 +189,12 @@ def scrape_authenticated_tweets(handle, tweet_count):
         return all_tweets
 
 def save_tweets_to_csv(path, tweets):
-    """Save the extracted tweets to a CSV file."""
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, mode="w", newline='', encoding="utf-8") as file:
-        writer = csv.DictWriter(file, fieldnames=["main_text", "quoted_texts", "poster", "repost_title", "images", "videos"])
+        writer = csv.DictWriter(
+            file,
+            fieldnames=["main_text", "quoted_texts", "poster", "repost_title", "images", "videos", "alt_texts"]
+        )
         writer.writeheader()
         for tweet in tweets:
             writer.writerow({
@@ -169,22 +203,22 @@ def save_tweets_to_csv(path, tweets):
                 "poster": tweet["poster"],
                 "repost_title": tweet["repost_title"],
                 "images": " || ".join(tweet.get("images", [])),
-                "videos": " || ".join(tweet.get("videos", []))
+                "videos": " || ".join(tweet.get("videos", [])),
+                "alt_texts": " || ".join(tweet.get("alt_texts", [])),
             })
 
 def read_handles(filename):
-    """Read Twitter usernames from a file."""
     with open(filename, "r") as f:
         return [line.strip() for line in f if line.strip()]
 
 def scrape_handle(handle):
-    """Wrapper function to scrape and save tweets for a single user."""
     try:
         print(f"🔍 Scraping tweets for: {handle}")
         tweets = scrape_authenticated_tweets(handle, TWEET_COUNT)
 
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        save_path = os.path.join("users", handle, timestamp, "tweets.csv")
+        safe_handle = re.sub(r'[^a-zA-Z0-9_]', '_', handle)
+        save_path = os.path.join("users", safe_handle, timestamp, "tweets.csv")
         save_tweets_to_csv(save_path, tweets)
         print(f"✅ Saved to {save_path}")
         return handle
@@ -196,7 +230,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Scrape Twitter handles.")
     parser.add_argument("filename", nargs="?", default="twitter_handles.txt", help="File containing Twitter handles")
     parser.add_argument("--handle", help="Scrape a single Twitter handle instead of a file")
-
+    parser.add_argument("--chrome-path", help="Path to Chrome executable", default=CHROME_EXECUTABLE_PATH)
     args = parser.parse_args()
 
     if args.handle:
