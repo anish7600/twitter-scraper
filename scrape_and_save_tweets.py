@@ -8,6 +8,7 @@ import argparse
 from datetime import datetime
 from concurrent.futures import ProcessPoolExecutor, as_completed
 import multiprocessing
+import random
 
 # Constants
 TWEET_COUNT = 100
@@ -138,7 +139,6 @@ def extract_tweets_with_videos(html, handle, intercepted_videos):
     tweets_resolved = resolve_videos(tweets_with_articles, intercepted_videos)
     return tweets_resolved
 
-
 def scrape_authenticated_tweets(handle, tweet_count):
     intercepted_videos = []
 
@@ -163,9 +163,14 @@ def scrape_authenticated_tweets(handle, tweet_count):
         all_tweets = []
         seen_texts = set()
         scroll_attempts = 0
+        max_scroll_attempts = 15
 
         while len(all_tweets) < tweet_count:
-            page.mouse.wheel(0, 2000)
+            previous_count = len(seen_texts)
+
+            # Scroll a bit more randomly to simulate human behavior
+            scroll_distance = random.randint(1800, 2500)
+            page.mouse.wheel(0, scroll_distance)
             page.wait_for_timeout(1500)
 
             html = page.content()
@@ -180,13 +185,20 @@ def scrape_authenticated_tweets(handle, tweet_count):
                 if len(all_tweets) >= tweet_count:
                     break
 
-            scroll_attempts += 1
-            if scroll_attempts > 30:
-                print("⛔ Max scroll attempts reached.")
+            # Check if any new tweets were added this scroll
+            if len(seen_texts) == previous_count:
+                scroll_attempts += 1
+                print(f"⚠️ No new tweets found. Attempt {scroll_attempts}/{max_scroll_attempts}")
+            else:
+                scroll_attempts = 0  # reset scroll attempts if new tweets found
+
+            if scroll_attempts >= max_scroll_attempts:
+                print("⛔ Max scroll attempts reached. No more tweets found.")
                 break
 
         browser.close()
         return all_tweets
+
 
 def save_tweets_to_csv(path, tweets):
     os.makedirs(os.path.dirname(path), exist_ok=True)
