@@ -11,7 +11,6 @@ import multiprocessing
 import random
 
 # Constants
-TWEET_COUNT = 100
 CHROME_EXECUTABLE_PATH = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 
 def get_chrome_cookies(domain=".x.com"):
@@ -139,7 +138,7 @@ def extract_tweets_with_videos(html, handle, intercepted_videos):
     tweets_resolved = resolve_videos(tweets_with_articles, intercepted_videos)
     return tweets_resolved
 
-def scrape_authenticated_tweets(handle, tweet_count):
+def scrape_tweets(handle, tweet_count):
     intercepted_videos = []
 
     def intercept_videos(route, request):
@@ -223,10 +222,10 @@ def read_handles(filename):
     with open(filename, "r") as f:
         return [line.strip() for line in f if line.strip()]
 
-def scrape_handle(handle):
+def scrape_handle(handle, tweet_count):
     try:
         print(f"🔍 Scraping tweets for: {handle}")
-        tweets = scrape_authenticated_tweets(handle, TWEET_COUNT)
+        tweets = scrape_tweets(handle, tweet_count)
 
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         safe_handle = re.sub(r'[^a-zA-Z0-9_]', '_', handle)
@@ -243,6 +242,7 @@ if __name__ == "__main__":
     parser.add_argument("filename", nargs="?", default="twitter_handles.txt", help="File containing Twitter handles")
     parser.add_argument("--handle", help="Scrape a single Twitter handle instead of a file")
     parser.add_argument("--chrome-path", help="Path to Chrome executable", default=CHROME_EXECUTABLE_PATH)
+    parser.add_argument("--count", type=int, default=100, help="Number of tweets to fetch per user (default: 100)")
     args = parser.parse_args()
 
     if args.handle:
@@ -250,12 +250,12 @@ if __name__ == "__main__":
     else:
         twitter_handles = read_handles(args.filename)
 
+    tweet_count = args.count
     multiprocessing.set_start_method("spawn")
-
     max_workers = min(4, len(twitter_handles))
 
     with ProcessPoolExecutor(max_workers=max_workers) as executor:
-        futures = [executor.submit(scrape_handle, handle) for handle in twitter_handles]
+        futures = [executor.submit(scrape_handle, handle, tweet_count) for handle in twitter_handles]
         for future in as_completed(futures):
             result = future.result()
             if result:
