@@ -1,9 +1,5 @@
-### Twitter Scraper
+## Twitter Scraper
 
-- ./setup_and_run.sh [--handle twitter_handle_without_'@'] [--count tweet_count]
+This project is documented on DeepWiki.
 
-> **Note:** This script uses your existing Chrome login session, so make sure you're already logged into Twitter/X in Chrome before running the script.
-
-### Tweets Dashboard
-
-- python twitter-flask/app.py 
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/anpa6841/twitter-scraper)
